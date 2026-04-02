@@ -91,6 +91,29 @@ This app decodes that into:
 
 ---
 
+## Running the Tests
+
+The project has 76 unit tests covering the METAR parser and Flask routes.
+
+Install pytest, then run:
+
+```bash
+pip install pytest
+pytest tests/test_app.py -v
+```
+
+Test coverage includes:
+
+| Layer | What is tested |
+|---|---|
+| **Helpers** | Wind direction conversion, temperature parsing, °C→°F, weather code decoding, sky condition logic |
+| **Parser** | All major METAR fields with mock strings — wind, visibility, phenomena, sky layers, temperature, altimeter, summaries |
+| **Flask routes** | Landing page, valid/invalid airport codes, lowercase normalisation, network timeout, connection errors |
+
+Tests use `unittest.mock.patch` to intercept `requests.get` — no real network calls are made.
+
+---
+
 ## Project Structure
 
 ```
@@ -99,6 +122,9 @@ claude-metar-reader/
 ├── requirements.txt     # Python dependencies
 ├── templates/
 │   └── index.html       # Jinja2 HTML template
+├── tests/
+│   ├── conftest.py      # pytest path setup
+│   └── test_app.py      # 76 unit tests
 └── .gitignore
 ```
 
