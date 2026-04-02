@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>METAR Reader{% if icao %} — {{ icao }}{% endif %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #f8fafc;
+    }
+    header p {
+      color: #94a3b8;
+      margin-top: 0.4rem;
+      font-size: 0.95rem;
+    }
+
+    /* ── Search form ── */
+    .search-form {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+    }
+    .search-form input {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border-radius: 0.6rem;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #f8fafc;
+      font-size: 1.05rem;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-form input::placeholder { color: #475569; text-transform: none; letter-spacing: normal; }
+    .search-form input:focus { border-color: #38bdf8; }
+    .search-form button {
+      padding: 0.75rem 1.4rem;
+      border-radius: 0.6rem;
+      border: none;
+      background: #0ea5e9;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .search-form button:hover { background: #38bdf8; }
+
+    /* ── Error ── */
+    .error-box {
+      background: #450a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 0.6rem;
+      padding: 1rem 1.2rem;
+      color: #fca5a5;
+      font-size: 0.95rem;
+    }
+
+    /* ── Weather card ── */
+    .weather-card {
+      background: #1e293b;
+      border-radius: 1rem;
+      overflow: hidden;
+      border: 1px solid #334155;
+    }
+
+    .card-hero {
+      padding: 1.8rem 2rem;
+      background: linear-gradient(135deg, #0c4a6e 0%, #1e3a5f 100%);
+      border-bottom: 1px solid #334155;
+    }
+    .card-hero .station {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #7dd3fc;
+      margin-bottom: 0.25rem;
+    }
+    .card-hero .condition-label {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #f0f9ff;
+      margin-bottom: 0.5rem;
+      line-height: 1.2;
+    }
+    .card-hero .summary {
+      color: #bae6fd;
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+    .card-hero .time-badge {
+      display: inline-block;
+      margin-top: 0.9rem;
+      font-size: 0.75rem;
+      color: #7dd3fc;
+      background: rgba(14,165,233,0.15);
+      border: 1px solid rgba(14,165,233,0.3);
+      border-radius: 999px;
+      padding: 0.2rem 0.7rem;
+    }
+    .auto-badge {
+      display: inline-block;
+      margin-left: 0.4rem;
+      font-size: 0.7rem;
+      background: rgba(148,163,184,0.15);
+      border: 1px solid rgba(148,163,184,0.3);
+      border-radius: 999px;
+      padding: 0.15rem 0.55rem;
+      color: #94a3b8;
+      vertical-align: middle;
+    }
+
+    /* ── Detail grid ── */
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1px;
+      background: #334155;
+    }
+    .detail-cell {
+      background: #1e293b;
+      padding: 1.1rem 1.4rem;
+    }
+    .detail-cell .label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 0.3rem;
+    }
+    .detail-cell .value {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+    .detail-cell .sub {
+      font-size: 0.8rem;
+      color: #64748b;
+      margin-top: 0.15rem;
+    }
+
+    /* ── Sky layers ── */
+    .sky-list {
+      list-style: none;
+    }
+    .sky-list li {
+      font-size: 0.875rem;
+      color: #cbd5e1;
+      margin-top: 0.15rem;
+    }
+    .sky-list li::before {
+      content: '▸ ';
+      color: #38bdf8;
+      font-size: 0.7rem;
+    }
+
+    /* ── Examples ── */
+    .examples {
+      text-align: center;
+      margin-top: 1.2rem;
+      font-size: 0.82rem;
+      color: #475569;
+    }
+    .examples a {
+      color: #38bdf8;
+      text-decoration: none;
+      margin: 0 0.3rem;
+    }
+    .examples a:hover { text-decoration: underline; }
+
+    /* ── METAR explainer ── */
+    .explainer {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      padding: 1.6rem 2rem;
+      margin-top: 2rem;
+    }
+    .explainer h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 0.6rem;
+    }
+    .explainer p {
+      font-size: 0.88rem;
+      color: #94a3b8;
+      line-height: 1.65;
+      margin-bottom: 0.75rem;
+    }
+    .explainer p:last-of-type { margin-bottom: 0; }
+    .explainer .example-metar {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+      color: #7dd3fc;
+      word-break: break-all;
+      line-height: 1.7;
+      margin: 0.75rem 0;
+    }
+    .explainer .field-list {
+      list-style: none;
+      margin-top: 0.5rem;
+    }
+    .explainer .field-list li {
+      font-size: 0.83rem;
+      color: #94a3b8;
+      padding: 0.2rem 0;
+      border-bottom: 1px solid #1e293b;
+    }
+    .explainer .field-list li:last-child { border-bottom: none; }
+    .explainer .field-list .token {
+      display: inline-block;
+      font-family: 'Courier New', monospace;
+      font-size: 0.78rem;
+      color: #38bdf8;
+      background: rgba(56,189,248,0.08);
+      border-radius: 0.25rem;
+      padding: 0.05rem 0.4rem;
+      margin-right: 0.4rem;
+      min-width: 90px;
+    }
+
+    /* ── Raw METAR (always visible) ── */
+    .raw-metar-box {
+      padding: 1rem 1.4rem;
+      border-top: 1px solid #334155;
+    }
+    .raw-metar-box .label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 0.4rem;
+    }
+    .raw-metar-box code {
+      display: block;
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      color: #94a3b8;
+      word-break: break-all;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <header>
+      <h1>&#9992; METAR Reader</h1>
+      <p>Enter an ICAO airport code to get a plain-English weather report.</p>
+    </header>
+
+    <form class="search-form" method="get" action="/">
+      <input
+        type="text"
+        name="icao"
+        maxlength="4"
+        placeholder="e.g. KJFK, KLAX, EGLL"
+        value="{{ icao }}"
+        autocomplete="off"
+        spellcheck="false"
+        autofocus
+      />
+      <button type="submit">Get Weather</button>
+    </form>
+
+    {% if not icao %}
+    <div class="examples">
+      Try:
+      <a href="/?icao=KJFK">KJFK</a>
+      <a href="/?icao=KLAX">KLAX</a>
+      <a href="/?icao=KORD">KORD</a>
+      <a href="/?icao=KHIO">KHIO</a>
+      <a href="/?icao=EGLL">EGLL</a>
+      <a href="/?icao=YSSY">YSSY</a>
+    </div>
+
+    <div class="explainer">
+      <h2>What is a METAR?</h2>
+      <p>
+        A <strong style="color:#e2e8f0;">METAR</strong> (Meteorological Aerodrome Report) is a standardized
+        weather observation issued by airports around the world, typically every hour or whenever
+        conditions change significantly. Pilots use METARs to assess weather before and during a flight,
+        but the format was designed for efficiency, not readability — making it look like a string of
+        cryptic codes to everyone else.
+      </p>
+      <p>Here is what a real METAR looks like:</p>
+      <div class="example-metar">METAR KJFK 020451Z 08009G17KT 7SM -RA OVC018 11/09 A3027 RMK AO2</div>
+      <p>Each part of that string has a specific meaning:</p>
+      <ul class="field-list">
+        <li><span class="token">KJFK</span> ICAO airport code (JFK International, New York)</li>
+        <li><span class="token">020451Z</span> Observation time — day 02 of the month, 04:51 UTC</li>
+        <li><span class="token">08009G17KT</span> Wind from 080° (east) at 9 knots, gusting to 17 knots</li>
+        <li><span class="token">7SM</span> Visibility 7 statute miles</li>
+        <li><span class="token">-RA</span> Light rain ("-" = light, "RA" = rain)</li>
+        <li><span class="token">OVC018</span> Overcast cloud layer at 1,800 feet</li>
+        <li><span class="token">11/09</span> Temperature 11°C / Dew point 9°C</li>
+        <li><span class="token">A3027</span> Altimeter setting 30.27 inHg</li>
+        <li><span class="token">RMK AO2</span> Remarks — automated station with precipitation sensor</li>
+      </ul>
+      <p style="margin-top:0.75rem;">
+        This app fetches the latest METAR for any ICAO airport code you enter and translates it
+        into plain English so anyone can understand the current weather at that airport.
+      </p>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="error-box">{{ error }}</div>
+    {% endif %}
+
+    {% if weather %}
+    <div class="weather-card">
+
+      <!-- Hero -->
+      <div class="card-hero">
+        <div class="station">
+          {{ weather.station }}
+          {% if weather.auto %}<span class="auto-badge">AUTO</span>{% endif %}
+        </div>
+        <div class="condition-label">{{ weather.condition_label }}</div>
+        <div class="summary">{{ weather.summary }}</div>
+        {% if weather.time_utc %}
+        <div class="time-badge">Reported {{ weather.time_utc }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Detail grid -->
+      <div class="detail-grid">
+
+        {% if weather.temp_f is defined %}
+        <div class="detail-cell">
+          <div class="label">Temperature</div>
+          <div class="value">{{ weather.temp_f }}&deg;F</div>
+          <div class="sub">{{ weather.temp_c }}&deg;C</div>
+        </div>
+        {% endif %}
+
+        {% if weather.dew_f is defined %}
+        <div class="detail-cell">
+          <div class="label">Dew Point</div>
+          <div class="value">{{ weather.dew_f }}&deg;F</div>
+          <div class="sub">{{ weather.dew_c }}&deg;C</div>
+        </div>
+        {% endif %}
+
+        {% if weather.wind_text %}
+        <div class="detail-cell">
+          <div class="label">Wind</div>
+          <div class="value">
+            {% if weather.wind_speed_kt is defined %}
+              {{ weather.wind_speed_kt }} kt
+            {% else %}
+              Calm
+            {% endif %}
+          </div>
+          <div class="sub">{{ weather.wind_text }}</div>
+        </div>
+        {% endif %}
+
+        {% if weather.visibility_text %}
+        <div class="detail-cell">
+          <div class="label">Visibility</div>
+          <div class="value">{{ weather.visibility_text }}</div>
+          <div class="sub">statute miles</div>
+        </div>
+        {% endif %}
+
+        {% if weather.altimeter_inhg is defined %}
+        <div class="detail-cell">
+          <div class="label">Altimeter</div>
+          <div class="value">{{ "%.2f"|format(weather.altimeter_inhg) }} inHg</div>
+          <div class="sub">barometric pressure</div>
+        </div>
+        {% endif %}
+
+        {% if weather.sky_layers %}
+        <div class="detail-cell">
+          <div class="label">Sky Conditions</div>
+          <ul class="sky-list">
+            {% for layer in weather.sky_layers %}
+            <li>{{ layer }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if weather.weather_phenomena %}
+        <div class="detail-cell">
+          <div class="label">Present Weather</div>
+          <ul class="sky-list">
+            {% for wx in weather.weather_phenomena %}
+            <li>{{ wx | capitalize }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+      </div><!-- /detail-grid -->
+
+      <!-- Raw METAR -->
+      <div class="raw-metar-box">
+        <div class="label">Raw METAR</div>
+        <code>{{ weather.raw }}</code>
+      </div>
+
+    </div><!-- /weather-card -->
+    {% endif %}
+
+  </div><!-- /container -->
+</body>
+</html>
